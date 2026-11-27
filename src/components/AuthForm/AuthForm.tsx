@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { mergeClasses } from "@fluentui/react-components";
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, Check, Circle, CircleCheck, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { signIn, signUp } from "../../services/mockAuth";
+import { EmailNotConfirmedError, login, register, resendConfirmation } from "../../services/authService";
 import type { AuthMode } from "../../types";
 import type { FormEvent } from "react";
 import { useAuthFormStyles } from "./AuthForm.styles";
@@ -27,6 +27,15 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
   const [invalidField, setInvalidField] = useState<"email" | "password" | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [phase, setPhase] = useState<"form" | "check-email" | "confirm-email">("form");
+  const [countdown, setCountdown] = useState(0);
+  const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    if (countdown <= 0) return undefined;
+    const timer = window.setTimeout(() => setCountdown((remaining) => Math.max(remaining - 1, 0)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [countdown]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,16 +55,68 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
 
     setLoading(true);
     try {
-      if (isSignUp) await signUp(email);
-      else await signIn(email);
-      onAuthenticated(email.trim().toLowerCase());
+      if (isSignUp) {
+        await register(email, password);
+        setEmail(email.trim().toLowerCase());
+        setCountdown(60);
+        setPhase("check-email");
+      } else {
+        await login(email, password);
+        onAuthenticated(email.trim().toLowerCase());
+      }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Something went wrong. Please try again.");
-      setInvalidField("email");
+      if (submitError instanceof EmailNotConfirmedError) {
+        setPhase("confirm-email");
+        setError("");
+      } else {
+        setError("We couldn't reach the service. Check your connection and try again.");
+        setInvalidField(null);
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const sendConfirmationAgain = async () => {
+    setResending(true);
+    setError("");
+    try {
+      await resendConfirmation(email);
+      setCountdown(60);
+    } catch {
+      setError("We couldn't reach the service. Check your connection and try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  if (phase !== "form") {
+    return (
+      <div className={styles.formWrap}>
+        <div className={styles.statusContent}>
+          <div className={styles.statusIcon} aria-hidden="true"><CircleCheck size={42} /></div>
+          <h2>{phase === "check-email" ? "Check your email." : "Confirm your email."}</h2>
+          <p>
+            {phase === "check-email"
+              ? `If an account can be created for ${email}, we'll send a confirmation link. It expires in 60 minutes.`
+              : "Confirm your email address before signing in. Check your inbox for the confirmation link."}
+          </p>
+          <button
+            className={styles.statusButton}
+            type="button"
+            onClick={sendConfirmationAgain}
+            disabled={countdown > 0 || resending}
+          >
+            {resending ? <><span className={styles.spinner} />Sending…</> : countdown > 0
+              ? `Resend in ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}`
+              : "Resend confirmation email"}
+          </button>
+          {error && <p className={styles.formError} role="alert">{error}</p>}
+          <Link className={styles.statusLink} to="/sign-in" state={{ email }}>Back to sign in</Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.formWrap}>
@@ -92,9 +153,7 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
 
         <div className={styles.labelRow}>
           <label htmlFor="password">Password</label>
-          {isSignUp
-            ? <span className={styles.passwordHint}>At least 8 characters</span>
-            : <Link className={styles.passwordLink} to="/forgot-password" state={{ email: email.trim() }}>Forgot password?</Link>}
+          {!isSignUp && <Link className={styles.passwordLink} to="/forgot-password" state={{ email: email.trim() }}>Forgot password?</Link>}
         </div>
         <div className={styles.inputWrap}>
           <LockKeyhole size={17} aria-hidden="true" />
@@ -107,7 +166,9 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             aria-invalid={invalidField === "password"}
-            aria-describedby={error ? "auth-error" : undefined}
+            aria-describedby={isSignUp
+              ? `password-rule${error ? " auth-error" : ""}`
+              : error ? "auth-error" : undefined}
           />
           <button
             className={styles.passwordVisibility}
@@ -119,7 +180,16 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
-
+        {isSignUp && (
+          <ul className={styles.passwordChecklist} id="password-rule" aria-live="polite">
+            <li>
+              {password.length >= 8
+                ? <span className={styles.checklistSatisfiedIcon}><Check size={12} aria-hidden="true" /></span>
+                : <Circle className={styles.checklistNeutralIcon} size={16} aria-hidden="true" />}
+              <span>At least 8 characters</span>
+            </li>
+          </ul>
+        )}
         {error && <p className={styles.formError} id="auth-error" role="alert">{error}</p>}
 
         <button className={styles.submitButton} type="submit" disabled={loading}>

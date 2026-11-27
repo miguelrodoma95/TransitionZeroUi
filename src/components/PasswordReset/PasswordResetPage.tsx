@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Circle, CircleCheck, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { requestPasswordReset, resetPassword } from "../../services/passwordReset";
+import { AuthApiError, forgotPassword, resetPassword } from "../../services/authService";
 import { AuthLayout } from "../AuthPage/AuthPage";
 import { usePasswordResetPageStyles } from "./PasswordResetPage.styles";
 
@@ -60,11 +60,13 @@ export function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      await requestPasswordReset(normalizedEmail);
+      await forgotPassword(normalizedEmail);
       window.sessionStorage.setItem(RESET_EMAIL_KEY, normalizedEmail);
       setEmail(normalizedEmail);
       setCountdown(60);
       setPhase("sent");
+    } catch {
+      setEmailError("We couldn't reach the service. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -73,8 +75,10 @@ export function ForgotPasswordPage() {
   const resendLink = async () => {
     setResending(true);
     try {
-      await requestPasswordReset(email);
+      await forgotPassword(email);
       setCountdown(60);
+    } catch {
+      setEmailError("We couldn't reach the service. Check your connection and try again.");
     } finally {
       setResending(false);
     }
@@ -139,7 +143,7 @@ export function ForgotPasswordPage() {
               disabled={countdown > 0 || resending}
             >
               {resending ? <><span className={styles.spinnerDark} />Sending…</> : countdown > 0
-                ? `Resend in 0:${String(Math.max(countdown - 1, 0)).padStart(2, "0")}`
+                ? `Resend in ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}`
                 : "Resend link"}
             </button>
             <div className={styles.linkRow}>
@@ -157,10 +161,10 @@ export function ResetPasswordPage() {
   const styles = usePasswordResetPageStyles();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
-  // TODO(backend): Validate this token server-side; this UI check is only for review.
-  const invalidToken = !token || token === "expired";
-  const [outcome, setOutcome] = useState<"form" | "success">("form");
+  const token = searchParams.get("code");
+  const knownEmail = readEmailFromState(location.state) || window.sessionStorage.getItem(RESET_EMAIL_KEY) || "";
+  const invalidToken = !token || !knownEmail;
+  const [outcome, setOutcome] = useState<"form" | "success" | "expired">("form");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -170,7 +174,6 @@ export function ResetPasswordPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const phase = invalidToken ? "expired" : outcome;
-  const knownEmail = readEmailFromState(location.state) || window.sessionStorage.getItem(RESET_EMAIL_KEY) || "";
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -186,8 +189,14 @@ export function ResetPasswordPage() {
 
     setLoading(true);
     try {
-      await resetPassword(token, newPassword);
+      await resetPassword(knownEmail, token, newPassword);
       setOutcome("success");
+    } catch (error) {
+      if (error instanceof AuthApiError && (error.status === 400 || error.status === 401)) {
+        setOutcome("expired");
+      } else {
+        setPasswordError("We couldn't reach the service. Check your connection and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -200,8 +209,8 @@ export function ResetPasswordPage() {
           <div className={styles.statusContent}>
             <h2 ref={headingRef} tabIndex={-1}>This link has expired.</h2>
             <p>Reset links are valid for 60 minutes and can only be used once. Request a new one to continue.</p>
-            <Link className={styles.primaryButtonLink} to="/forgot-password">Request a new link<ArrowRight size={17} aria-hidden="true" /></Link>
-            <Link className={styles.textLink} to="/sign-in">Back to sign in</Link>
+            <Link className={styles.primaryButtonLink} to="/forgot-password" state={{ email: knownEmail }}>Request a new link<ArrowRight size={17} aria-hidden="true" /></Link>
+            <Link className={styles.textLink} to="/sign-in" state={{ email: knownEmail }}>Back to sign in</Link>
           </div>
         ) : phase === "success" ? (
           <div className={styles.statusContent}>

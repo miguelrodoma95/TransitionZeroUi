@@ -4,7 +4,9 @@ import { AuthPage } from "../components/AuthPage/AuthPage";
 import { ForgotPasswordPage, ResetPasswordPage } from "../components/PasswordReset/PasswordResetPage";
 import { AthleteOnboardingModal } from "../components/AthleteOnboardingModal/AthleteOnboardingModal";
 import { Dashboard } from "../components/Dashboard/Dashboard";
-import { getSavedProfile, getSignedInEmail, saveProfile, signOut } from "../services/mockAuth";
+import { ConfirmEmailPage } from "../components/ConfirmEmail/ConfirmEmailPage";
+import { getSavedProfile, saveProfile } from "../services/mockAuth";
+import { getSignedInEmail, logout } from "../services/authService";
 import type { AthleteProfile } from "../types";
 import { useAppStyles, useGlobalStyles } from "./App.styles";
 
@@ -35,8 +37,9 @@ export default function App() {
   };
 
   const handleSignOut = () => {
-    signOut();
-    navigate("/sign-in");
+    void logout().catch(() => {
+      console.error("The API could not confirm sign-out; local credentials were cleared.");
+    }).finally(() => navigate("/sign-in"));
   };
 
   return (
@@ -56,6 +59,7 @@ export default function App() {
         />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/confirm-email" element={<ConfirmEmailPage />} />
         <Route
           path="/dashboard"
           element={
