@@ -90,6 +90,14 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
     }
   };
 
+  const returnToSignIn = () => {
+    setPhase("form");
+    setPassword("");
+    setError("");
+    setInvalidField(null);
+    setCountdown(0);
+  };
+
   if (phase !== "form") {
     return (
       <div className={styles.formWrap}>
@@ -112,7 +120,9 @@ export function AuthForm({ mode, onAuthenticated }: AuthFormProps) {
               : "Resend confirmation email"}
           </button>
           {error && <p className={styles.formError} role="alert">{error}</p>}
-          <Link className={styles.statusLink} to="/sign-in" state={{ email }}>Back to sign in</Link>
+          <Link className={styles.statusLink} to="/sign-in" state={{ email }} onClick={returnToSignIn}>
+            Back to sign in
+          </Link>
         </div>
       </div>
     );
