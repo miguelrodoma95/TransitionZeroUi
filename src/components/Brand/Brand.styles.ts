@@ -19,6 +19,9 @@ export const useBrandStyles = makeStyles({
   inverse: {
     color: "#f3f5ed",
   },
+  slate: {
+    color: "#0f2338",
+  },
   mark: {
     width: "23px",
     height: "23px",
@@ -49,6 +52,18 @@ export const useBrandStyles = makeStyles({
       backgroundColor: "#192b28",
     },
   },
+  slateMark: {
+    border: "1px solid #64748b",
+    "> span": {
+      border: "1px solid #132c46",
+    },
+    "> span:first-child": {
+      backgroundColor: "#132c46",
+    },
+    "> span:last-child": {
+      backgroundColor: "#f8faf7",
+    },
+  },
   wordmark: {
     "> span": {
       fontWeight: 430,
@@ -60,5 +75,8 @@ export const useBrandStyles = makeStyles({
   },
   inverseArrow: {
     color: "#b6c8b7",
+  },
+  slateArrow: {
+    color: "#64748b",
   },
 });
