@@ -1,0 +1,6 @@
+@TransitionZero.Api_HostAddress = http://localhost:5216
+
+GET {{TransitionZero.Api_HostAddress}}/health
+Accept: application/json
+
+###
