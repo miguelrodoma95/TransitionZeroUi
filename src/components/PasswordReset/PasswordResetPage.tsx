@@ -162,7 +162,10 @@ export function ResetPasswordPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("code");
-  const knownEmail = readEmailFromState(location.state) || window.sessionStorage.getItem(RESET_EMAIL_KEY) || "";
+  const knownEmail = searchParams.get("email") ||
+    readEmailFromState(location.state) ||
+    window.sessionStorage.getItem(RESET_EMAIL_KEY) ||
+    "";
   const invalidToken = !token || !knownEmail;
   const [outcome, setOutcome] = useState<"form" | "success" | "expired">("form");
   const [newPassword, setNewPassword] = useState("");

@@ -53,7 +53,7 @@ public sealed class AcsEmailSender(
         var code = WebUtility.HtmlDecode(resetCode);
         var frontendLink = BuildFrontendLink(
             "/reset-password",
-            new Dictionary<string, string?> { ["code"] = code });
+            new Dictionary<string, string?> { ["code"] = code, ["email"] = email });
 
         return SendAsync(
             email,
