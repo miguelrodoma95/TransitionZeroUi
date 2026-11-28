@@ -65,7 +65,7 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
   if (authenticated) {
-    const token = window.sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -91,22 +91,22 @@ async function request<T>(
 }
 
 function storeTokens(tokens: TokenResponse, email: string): void {
-  window.sessionStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  window.sessionStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-  window.sessionStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+  window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+  window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+  window.localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
 }
 
 export function getSignedInEmail(): string | null {
-  return window.sessionStorage.getItem(EMAIL_KEY);
+  return window.localStorage.getItem(EMAIL_KEY);
 }
 
 export function getPendingConfirmationEmail(): string {
-  return window.sessionStorage.getItem(PENDING_CONFIRMATION_EMAIL_KEY) ?? "";
+  return window.localStorage.getItem(PENDING_CONFIRMATION_EMAIL_KEY) ?? "";
 }
 
 export async function register(email: string, password: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
-  window.sessionStorage.setItem(PENDING_CONFIRMATION_EMAIL_KEY, normalizedEmail);
+  window.localStorage.setItem(PENDING_CONFIRMATION_EMAIL_KEY, normalizedEmail);
 
   try {
     await request<void>("/api/auth/register", {
@@ -129,7 +129,7 @@ export async function login(email: string, password: string): Promise<void> {
     storeTokens(tokens, normalizedEmail);
   } catch (error) {
     if (error instanceof AuthApiError && error.status === 401 && error.detail === "NotAllowed") {
-      window.sessionStorage.setItem(PENDING_CONFIRMATION_EMAIL_KEY, normalizedEmail);
+      window.localStorage.setItem(PENDING_CONFIRMATION_EMAIL_KEY, normalizedEmail);
       throw new EmailNotConfirmedError();
     }
     throw error;
@@ -137,7 +137,7 @@ export async function login(email: string, password: string): Promise<void> {
 }
 
 export async function refresh(): Promise<void> {
-  const refreshToken = window.sessionStorage.getItem(REFRESH_TOKEN_KEY);
+  const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
   const email = getSignedInEmail();
   if (!refreshToken || !email) {
     clearSession();
@@ -158,7 +158,7 @@ export async function refresh(): Promise<void> {
 
 export async function logout(): Promise<void> {
   try {
-    if (window.sessionStorage.getItem(ACCESS_TOKEN_KEY)) {
+    if (window.localStorage.getItem(ACCESS_TOKEN_KEY)) {
       await request<void>("/api/auth/logout", { method: "POST" }, true);
     }
   } finally {
@@ -167,9 +167,9 @@ export async function logout(): Promise<void> {
 }
 
 function clearSession(): void {
-  window.sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.sessionStorage.removeItem(REFRESH_TOKEN_KEY);
-  window.sessionStorage.removeItem(EMAIL_KEY);
+  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  window.localStorage.removeItem(EMAIL_KEY);
 }
 
 export async function resendConfirmation(email: string): Promise<void> {
@@ -202,7 +202,7 @@ export async function resetPassword(email: string, code: string, newPassword: st
 export async function confirmEmail(userId: string, code: string): Promise<void> {
   const query = new URLSearchParams({ userId, code });
   await request<void>(`/api/auth/confirmEmail?${query.toString()}`);
-  window.sessionStorage.removeItem(PENDING_CONFIRMATION_EMAIL_KEY);
+  window.localStorage.removeItem(PENDING_CONFIRMATION_EMAIL_KEY);
 }
 
 export async function getInfo(): Promise<AuthInfo> {
