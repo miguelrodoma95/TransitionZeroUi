@@ -111,7 +111,7 @@ export function AthleteOnboardingModal({ email, onComplete, onDismiss }: Athlete
     >
       <div className={styles.card}>
         <div className={styles.top}>
-          <Brand />
+          <Brand slate />
           <span className={styles.stepCount}>STEP <strong>0{step}</strong> / 02</span>
         </div>
         <div className={styles.progress}>

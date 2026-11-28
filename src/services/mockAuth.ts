@@ -2,8 +2,6 @@ import { DISCIPLINES } from "../types";
 import type { AthleteProfile, Discipline, FirstRace } from "../types";
 
 const PROFILE_KEY = "transitionzero.profile";
-const SESSION_KEY = "transitionzero.session";
-const registeredEmails = new Set<string>();
 
 const legacyDisciplines: Record<string, Discipline> = {
   "Marathon / Half": "run",
@@ -71,9 +69,6 @@ function normalizeProfile(value: unknown): AthleteProfile | null {
   };
 }
 
-const wait = (milliseconds: number) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
-
 export function getSavedProfile(): AthleteProfile | null {
   const saved = window.localStorage.getItem(PROFILE_KEY);
   if (!saved) return null;
@@ -89,46 +84,6 @@ export function getSavedProfile(): AthleteProfile | null {
   }
 }
 
-export function getSignedInEmail(): string | null {
-  return window.localStorage.getItem(SESSION_KEY);
-}
-
-export async function signUp(email: string): Promise<void> {
-  await wait(650);
-  const normalizedEmail = email.trim().toLowerCase();
-  const savedProfile = getSavedProfile();
-
-  if (
-    registeredEmails.has(normalizedEmail) ||
-    savedProfile?.email.toLowerCase() === normalizedEmail
-  ) {
-    throw new Error("An account with this email already exists. Try signing in instead.");
-  }
-
-  registeredEmails.add(normalizedEmail);
-  window.localStorage.setItem(SESSION_KEY, normalizedEmail);
-}
-
-export async function signIn(email: string): Promise<void> {
-  await wait(650);
-  const normalizedEmail = email.trim().toLowerCase();
-  const savedProfile = getSavedProfile();
-
-  if (
-    !registeredEmails.has(normalizedEmail) &&
-    savedProfile?.email.toLowerCase() !== normalizedEmail
-  ) {
-    throw new Error("We couldn't find a demo account with that email. Create an account to get started.");
-  }
-
-  window.localStorage.setItem(SESSION_KEY, normalizedEmail);
-}
-
 export function saveProfile(profile: AthleteProfile): void {
   window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  window.localStorage.setItem(SESSION_KEY, profile.email.trim().toLowerCase());
-}
-
-export function signOut(): void {
-  window.localStorage.removeItem(SESSION_KEY);
 }
