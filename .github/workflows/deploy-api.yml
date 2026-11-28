@@ -21,6 +21,13 @@ jobs:
     concurrency:
       group: deploy-api-${{ github.ref_name == 'main' && 'prod' || 'dev' }}
       cancel-in-progress: false
+    env:
+      AZURE_SQL_RESOURCE_GROUP: ${{ vars.AZURE_SQL_RESOURCE_GROUP }}
+      AZURE_SQL_SERVER: ${{ vars.AZURE_SQL_SERVER }}
+      KEYVAULT_NAME: ${{ vars.KEYVAULT_NAME }}
+      DataProtection__BlobUri: https://sttz1223.blob.core.windows.net/dataprotection-keys/keys.xml
+      DataProtection__KeyVaultKeyUri: https://${{ vars.KEYVAULT_NAME }}.vault.azure.net/keys/dataprotection
+      AcsEmail__Endpoint: https://acs-tz-prod.unitedstates.communication.azure.com
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,8 +44,137 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Install dotnet-ef
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.0.15
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
       - name: Publish API
         run: dotnet publish api/TransitionZero.Api/TransitionZero.Api.csproj -c Release -o ./publish
+
+      - name: Fetch and validate dev SQL connection string
+        if: ${{ github.ref_name != 'main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          connection_string="$(az keyvault secret show \
+            --vault-name "$KEYVAULT_NAME" \
+            --name SqlConnectionString-dev \
+            --query value -o tsv)"
+
+          if [[ -z "$connection_string" ]]; then
+            echo "::error::The dev SQL connection string is empty."
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$connection_string"
+
+          if ! catalog="$(printf '%s' "$connection_string" | python3 -c '
+          import sys
+
+          catalogs = []
+          for segment in sys.stdin.read().split(";"):
+              key, separator, value = segment.partition("=")
+              if separator and key.strip().casefold() == "initial catalog":
+                  catalogs.append(value.strip())
+
+          if len(catalogs) != 1:
+              raise SystemExit(2)
+          print(catalogs[0])
+          ')"; then
+            echo "::error::The dev SQL connection string must contain exactly one Initial Catalog."
+            exit 1
+          fi
+
+          if [[ "$catalog" != "tz-dev" ]]; then
+            echo "::error::Refusing migration: the dev catalog must be exactly tz-dev."
+            exit 1
+          fi
+
+          printf 'MIGRATION_SQL_CONNECTION_STRING=%s\n' "$connection_string" >> "$GITHUB_ENV"
+          printf 'ConnectionStrings__DefaultConnection=%s\n' "$connection_string" >> "$GITHUB_ENV"
+
+      - name: Create temporary SQL firewall rule
+        id: sql-firewall
+        if: ${{ github.ref_name != 'main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rule_name="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          runner_ip="$(curl --fail --silent --show-error --ipv4 https://api.ipify.org)"
+          if [[ -z "$runner_ip" ]]; then
+            echo "::error::Could not determine the runner's public IP."
+            exit 1
+          fi
+
+          printf 'rule_name=%s\n' "$rule_name" >> "$GITHUB_OUTPUT"
+          az sql server firewall-rule create \
+            --resource-group "$AZURE_SQL_RESOURCE_GROUP" \
+            --server "$AZURE_SQL_SERVER" \
+            --name "$rule_name" \
+            --start-ip-address "$runner_ip" \
+            --end-ip-address "$runner_ip" \
+            --output none
+
+      - name: Apply dev EF migrations
+        if: ${{ github.ref_name != 'main' }}
+        run: >
+          dotnet ef database update
+          --project api/TransitionZero.Api
+          --startup-project api/TransitionZero.Api
+          --configuration Release
+          --connection "$MIGRATION_SQL_CONNECTION_STRING"
+
+      - name: Delete temporary SQL firewall rule
+        if: ${{ always() && github.ref_name != 'main' }}
+        env:
+          RULE_NAME: ${{ steps.sql-firewall.outputs.rule_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$RULE_NAME" ]]; then
+            echo "No temporary SQL firewall rule was created."
+            exit 0
+          fi
+
+          existing_rule="$(az sql server firewall-rule list \
+            --resource-group "$AZURE_SQL_RESOURCE_GROUP" \
+            --server "$AZURE_SQL_SERVER" \
+            --query "[?name=='$RULE_NAME'].name | [0]" \
+            --output tsv)"
+          if [[ -z "$existing_rule" ]]; then
+            echo "No temporary SQL firewall rule exists to delete."
+            exit 0
+          fi
+
+          az sql server firewall-rule delete \
+            --resource-group "$AZURE_SQL_RESOURCE_GROUP" \
+            --server "$AZURE_SQL_SERVER" \
+            --name "$RULE_NAME" \
+            --yes \
+            --output none
+
+      - name: Generate prod idempotent migrations script
+        if: ${{ github.ref_name == 'main' }}
+        env:
+          ConnectionStrings__DefaultConnection: Server=127.0.0.1;Database=ef-design-time;Integrated Security=True;TrustServerCertificate=True;Encrypt=False
+        run: >
+          dotnet ef migrations script
+          --idempotent
+          --project api/TransitionZero.Api
+          --startup-project api/TransitionZero.Api
+          --configuration Release
+          --output migrations.sql
+
+      - name: Upload prod migrations script
+        if: ${{ github.ref_name == 'main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-idempotent-migrations
+          path: migrations.sql
+          if-no-files-found: error
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
